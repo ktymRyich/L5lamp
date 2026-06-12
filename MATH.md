@@ -108,20 +108,48 @@ $$
 - Spiralize outer contour (Cura) / Spiral Vase (PrusaSlicer) を有効化。
 - Top/bottom solid = 0。infill = 0。
 
-### 4.2 sin 波を「プリントパスに直接乗せる」方法
-スライサの vase mode は (x, y) を 1 層内で連続に辿るので、本ランプの数式をそのまま G-code として書ける:
+### 4.2 sin 波の 2 つのレベル — **surface 変調 と path 変調 は別物**
+
+| | surface modulation (`lamp.js`) | **path modulation (`gcode.js`)** ★本命 |
+|--|--|--|
+| 操作対象 | シェードの**面**そのもの | ノズルが描く**線**そのもの |
+| 出力 | STL（三角ポリゴン） | G-code (M82 連続押出) |
+| 波形の精度 | 三角化エイリアスを受ける | 数式どおり書ける |
+| Z 方向うねり | できない (1 contour = 1 z) | **できる** (層内で z が ±A 揺れる) |
+| 推奨用途 | 設計段階のプレビュー | 実プリント |
+
+#### path modulation の数式
+
+層 j、周内媒介 `t ∈ [0,1)` で:
 
 $$
 \begin{aligned}
-x(t,j) &= R(\theta, z_j)\cos\theta \\
-y(t,j) &= R(\theta, z_j)\sin\theta \\
-z(j)   &= j \cdot \Delta z
-\end{aligned},\quad \theta = 2\pi t
+\theta     &= 2\pi t \\
+z_{\text{layer}} &= z_0 + (j + t)\,\Delta z \\
+z_{\text{wiggle}} &= A_z^{\text{path}} \, \sin\bigl(\omega_z\, z_{\text{layer}} + n_w \theta\bigr) \\
+z_{\text{path}} &= z_{\text{layer}} + z_{\text{wiggle}} \\
+r_{\text{path}} &= \rho(z_{\text{layer}}) + A_{\text{path}} \, \sin\bigl(n_{\text{path}}\,\theta + \psi_z\, z_{\text{layer}}\bigr) \\
+x &= r_{\text{path}} \cos\theta,\quad y = r_{\text{path}} \sin\theta
+\end{aligned}
 $$
 
-`j` が層番号、`Δz` が layer height (0.2 mm 推奨)。  
-STL を経由せずに `post/gcode_gen.py` 等でプリミティブに G-code を吐けば、**sin 波を完全に意図した位相で刻める**（STL 経由だと三角化誤差で波形が丸まる）。  
-初期版ビューアは STL 出力のみ提供。直書き G-code ジェネレータは次段で追加予定。
+ポイントは `z_wiggle` 項 — **層内で z が ±Aₐ ぶれる**ので、ノズルが上下にうねった線を描く。Vase mode の正攻法では実現不可能（STL contour は単一 z）。これが「Gcode 直接いじる」の中身。
+
+#### 押出量 E
+
+絶対押出 (M82) で、距離ベースに計算:
+
+$$
+\Delta E = \frac{w_{\text{line}} \cdot \Delta z \cdot \|\Delta\mathbf{p}\|}{\pi (D_f / 2)^2}
+$$
+
+(`gcode.js : generateShadePath` 実装済み)
+
+#### ビューアからの使い方
+- 右上 GUI の `View` → `mode = toolpath` で **実際のノズル軌跡を 3D 描画**
+- `★ Path sin (G-code)` フォルダで `A_z [mm]` (Z うねり) と `ωz` を触ると線がうにゃうにゃする
+- `★ Export G-code (.gcode)` でプリンタ投入用ファイルを書き出し
+- ホットキー `T` で surface ↔ toolpath 切替
 
 ### 4.3 推奨素材
 | 素材 | 特徴 | 用途 |
